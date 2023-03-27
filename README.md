@@ -35,7 +35,7 @@ $ npm install socket.io-redis-adapter redis
 ```js
 const { Server } = require('socket.io');
 const { createClient } = require('redis');
-const { createAdapter } = require('@socket.io/redis-adapter');
+const { createAdapter } = require('socket.io-redis-adapter');
 
 const io = new Server();
 const pubClient = createClient({ host: 'localhost', port: 6379 });
@@ -52,7 +52,7 @@ With `redis@3`, calling `connect()` on the Redis clients is not needed:
 ```js
 const { Server } = require('socket.io');
 const { createClient } = require('redis');
-const { createAdapter } = require('@socket.io/redis-adapter');
+const { createAdapter } = require('socket.io-redis-adapter');
 
 const io = new Server();
 const pubClient = createClient({ host: 'localhost', port: 6379 });
@@ -68,7 +68,7 @@ io.listen(3000);
 ```js
 import { Server } from 'socket.io';
 import { createClient } from 'redis';
-import { createAdapter } from '@socket.io/redis-adapter';
+import { createAdapter } from 'socket.io-redis-adapter';
 
 const io = new Server();
 const pubClient = createClient({ host: 'localhost', port: 6379 });
@@ -85,7 +85,7 @@ Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
 ```ts
 import { Server } from 'socket.io';
 import { createClient } from 'redis';
-import { createAdapter } from '@socket.io/redis-adapter';
+import { createAdapter } from 'socket.io-redis-adapter';
 
 const io = new Server();
 const pubClient = createClient({ host: 'localhost', port: 6379 });
@@ -97,7 +97,7 @@ Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
 });
 ```
 
-By running Socket.IO with the `@socket.io/redis-adapter` adapter you can run
+By running Socket.IO with the `socket.io-redis-adapter` adapter you can run
 multiple Socket.IO instances in different processes or servers that can
 all broadcast and emit events to and from each other.
 
@@ -219,7 +219,7 @@ console.log(rooms); // a Set containing all rooms (across every node)
 
 ```js
 const io = require('socket.io')(3000);
-const redisAdapter = require('@socket.io/redis-adapter');
+const redisAdapter = require('socket.io-redis-adapter');
 const Redis = require('ioredis');
 
 const startupNodes = [
@@ -243,7 +243,7 @@ io.adapter(redisAdapter(pubClient, subClient));
 
 ```js
 const io = require('socket.io')(3000);
-const redisAdapter = require('@socket.io/redis-adapter');
+const redisAdapter = require('socket.io-redis-adapter');
 const Redis = require('ioredis');
 
 const options = {
@@ -262,7 +262,7 @@ io.adapter(redisAdapter(pubClient, subClient));
 
 ## Protocol
 
-The `@socket.io/redis-adapter` adapter broadcasts and receives messages on particularly named Redis channels. For global broadcasts the channel name is:
+The `socket.io-redis-adapter` adapter broadcasts and receives messages on particularly named Redis channels. For global broadcasts the channel name is:
 ```
 prefix + '#' + namespace + '#'
 ```
@@ -285,7 +285,7 @@ A number of other libraries adopt this protocol including:
 
 ## Migrating from `socket.io-redis`
 
-The package was renamed from `socket.io-redis` to `@socket.io/redis-adapter` in [v7](https://github.com/socketio/socket.io-redis-adapter/releases/tag/7.0.0), in order to match the name of the Redis emitter (`@socket.io/redis-emitter`).
+The package was renamed from `socket.io-redis` to `socket.io-redis-adapter` in [v7](https://github.com/socketio/socket.io-redis-adapter/releases/tag/7.0.0), in order to match the name of the Redis emitter (`socket.io-redis-emitter`).
 
 To migrate to the new package, you'll need to make sure to provide your own Redis clients, as the package will no longer create Redis clients on behalf of the user.
 
@@ -301,7 +301,7 @@ After:
 
 ```js
 const { createClient } = require("redis");
-const { createAdapter } = require("@socket.io/redis-adapter");
+const { createAdapter } = require("socket.io-redis-adapter");
 
 const pubClient = createClient({ host: "localhost", port: 6379 });
 const subClient = pubClient.duplicate();
@@ -309,7 +309,7 @@ const subClient = pubClient.duplicate();
 io.adapter(createAdapter(pubClient, subClient));
 ```
 
-Please note that the communication protocol between the Socket.IO servers has not been updated, so you can have some servers with `socket.io-redis` and some others with `@socket.io/redis-adapter` at the same time.
+Please note that the communication protocol between the Socket.IO servers has not been updated, so you can have some servers with `socket.io-redis` and some others with `socket.io-redis-adapter` at the same time.
 
 ## License
 
