@@ -16,3 +16,4 @@ node_modules
 .idea
 .nyc_output/
 dist/
+/package-lock.json
