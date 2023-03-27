@@ -86,10 +86,11 @@ export interface RedisAdapterOptions {
 export function createAdapter(
   pubClient: any,
   subClient: any,
-  opts?: Partial<RedisAdapterOptions>
+  opts?: Partial<RedisAdapterOptions>,
+  isCustom = false
 ) {
   return function (nsp) {
-    return new RedisAdapter(nsp, pubClient, subClient, opts);
+    return new RedisAdapter(nsp, pubClient, subClient, opts, isCustom);
   };
 }
 
@@ -107,6 +108,10 @@ export class RedisAdapter extends Adapter {
   private ackRequests: Map<string, AckRequest> = new Map();
   private redisListeners: Map<string, Function> = new Map();
 
+  // by sorilove: 구독 채널 목록
+  private psubscribeSet = new Set();
+  private isCustom = false;
+
   /**
    * Adapter constructor.
    *
@@ -121,7 +126,8 @@ export class RedisAdapter extends Adapter {
     nsp: any,
     readonly pubClient: any,
     readonly subClient: any,
-    opts: Partial<RedisAdapterOptions> = {}
+    opts: Partial<RedisAdapterOptions> = {},
+    isCustom = false
   ) {
     super(nsp);
 
@@ -165,7 +171,11 @@ export class RedisAdapter extends Adapter {
       this.redisListeners.set("pmessageBuffer", this.onmessage.bind(this));
       this.redisListeners.set("messageBuffer", this.onrequest.bind(this));
 
-      this.subClient.psubscribe(this.channel + "*");
+      // by sorilove: 패턴으로 구독하지 말자!
+      this.isCustom = isCustom;
+      if (!this.isCustom) {
+        this.subClient.psubscribe(this.channel + "*");
+      }
       this.subClient.on(
         "pmessageBuffer",
         this.redisListeners.get("pmessageBuffer")
@@ -303,6 +313,20 @@ export class RedisAdapter extends Adapter {
             rooms: new Set<Room>(request.opts.rooms),
             except: new Set<Room>(request.opts.except),
           };
+
+          // by sorilove: join할 때, room 이름으로 구독하자!
+          if (this.isCustom) {
+            request.rooms.forEach((room) => {
+              const psubKey = `${this.channel}${room}#`;
+              // console.log("psubKey", psubKey);
+              if (this.psubscribeSet.has(psubKey) === false) {
+                this.subClient.psubscribe(psubKey);
+                // console.log(`psubscribe ${psubKey}`);
+              }
+              this.psubscribeSet.add(psubKey);
+            });
+          }
+
           return super.addSockets(opts, request.rooms);
         }
 
@@ -326,6 +350,21 @@ export class RedisAdapter extends Adapter {
             rooms: new Set<Room>(request.opts.rooms),
             except: new Set<Room>(request.opts.except),
           };
+
+          // by sorilove: leave할 때, room 이름으로 구독 해제하자!
+          if (this.isCustom) {
+            request.rooms.forEach((room) => {
+              const psubKey = `${this.channel}${room}#`;
+              if (this.psubscribeSet.has(psubKey)) {
+                this.psubscribeSet.delete(psubKey);
+                if (this.psubscribeSet.has(psubKey) === false) {
+                  this.subClient.punsubscribe(psubKey);
+                  // console.log(`punsubscribe ${psubKey}`);
+                }
+              }
+            });
+          }
+
           return super.delSockets(opts, request.rooms);
         }
 
@@ -349,6 +388,21 @@ export class RedisAdapter extends Adapter {
             rooms: new Set<Room>(request.opts.rooms),
             except: new Set<Room>(request.opts.except),
           };
+
+          // by sorilove: leave할 때, room 이름으로 구독 해제하자!
+          if (this.isCustom) {
+            request.rooms.forEach((room) => {
+              const psubKey = `${this.channel}${room}#`;
+              if (this.psubscribeSet.has(psubKey)) {
+                this.psubscribeSet.delete(psubKey);
+                if (this.psubscribeSet.has(psubKey) === false) {
+                  this.subClient.punsubscribe(psubKey);
+                  // console.log(`punsubscribe ${psubKey}`);
+                }
+              }
+            });
+          }
+
           return super.disconnectSockets(opts, request.close);
         }
 
@@ -964,7 +1018,11 @@ export class RedisAdapter extends Adapter {
         true
       );
     } else {
-      this.subClient.punsubscribe(this.channel + "*");
+      // by sorilove: unsubscribe all channels
+      if (!this.isCustom) {
+        this.subClient.punsubscribe(this.channel + "*");
+      }
+
       this.subClient.off(
         "pmessageBuffer",
         this.redisListeners.get("pmessageBuffer")
