@@ -27,7 +27,7 @@
 Installation:
 
 ```
-$ npm install @socket.io/redis-adapter redis
+$ npm install socket.io-redis-adapter redis
 ```
 
 ### CommonJS
