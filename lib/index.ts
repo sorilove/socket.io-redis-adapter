@@ -109,7 +109,8 @@ export class RedisAdapter extends Adapter {
   private redisListeners: Map<string, Function> = new Map();
 
   // by sorilove: 구독 채널 목록
-  private psubscribeSet = new Set();
+  // private psubscribeSet = new Set();
+  private subscribeSet = new Set();
   private isCustom = false;
 
   /**
@@ -319,11 +320,19 @@ export class RedisAdapter extends Adapter {
             request.rooms.forEach((room) => {
               const psubKey = `${this.channel}${room}#`;
               // console.log("psubKey", psubKey);
-              if (this.psubscribeSet.has(psubKey) === false) {
-                this.subClient.psubscribe(psubKey);
-                // console.log(`psubscribe ${psubKey}`);
+              
+              // -------------------------------------------->
+              // if (this.psubscribeSet.has(psubKey) === false) {
+              //   this.subClient.psubscribe(psubKey);
+              //   // console.log(`psubscribe ${psubKey}`);
+              // }
+              // this.psubscribeSet.add(psubKey);
+              // <--------------------------------------------
+              if (this.subscribeSet.has(psubKey) === false) {
+                this.subClient.subscribe(psubKey);
+                // console.log(`subscribe ${psubKey}`);
               }
-              this.psubscribeSet.add(psubKey);
+              this.subscribeSet.add(psubKey);
             });
           }
 
@@ -355,13 +364,24 @@ export class RedisAdapter extends Adapter {
           if (this.isCustom) {
             request.rooms.forEach((room) => {
               const psubKey = `${this.channel}${room}#`;
-              if (this.psubscribeSet.has(psubKey)) {
-                this.psubscribeSet.delete(psubKey);
-                if (this.psubscribeSet.has(psubKey) === false) {
-                  this.subClient.punsubscribe(psubKey);
-                  // console.log(`punsubscribe ${psubKey}`);
+
+              // -------------------------------------------->
+              // if (this.psubscribeSet.has(psubKey)) {
+              //   this.psubscribeSet.delete(psubKey);
+              //   if (this.psubscribeSet.has(psubKey) === false) {
+              //     this.subClient.punsubscribe(psubKey);
+              //     // console.log(`punsubscribe ${psubKey}`);
+              //   }
+              // }
+              // <--------------------------------------------
+              if (this.subscribeSet.has(psubKey)) {
+                this.subscribeSet.delete(psubKey);
+                if (this.subscribeSet.has(psubKey) === false) {
+                  this.subClient.unsubscribe(psubKey);
+                  // console.log(`unsubscribe ${psubKey}`);
                 }
               }
+
             });
           }
 
@@ -393,13 +413,24 @@ export class RedisAdapter extends Adapter {
           if (this.isCustom) {
             request.rooms.forEach((room) => {
               const psubKey = `${this.channel}${room}#`;
-              if (this.psubscribeSet.has(psubKey)) {
-                this.psubscribeSet.delete(psubKey);
-                if (this.psubscribeSet.has(psubKey) === false) {
-                  this.subClient.punsubscribe(psubKey);
-                  // console.log(`punsubscribe ${psubKey}`);
+
+              // -------------------------------------------->
+              // if (this.psubscribeSet.has(psubKey)) {
+              //   this.psubscribeSet.delete(psubKey);
+              //   if (this.psubscribeSet.has(psubKey) === false) {
+              //     this.subClient.punsubscribe(psubKey);
+              //     // console.log(`punsubscribe ${psubKey}`);
+              //   }
+              // }
+              // <--------------------------------------------
+              if (this.subscribeSet.has(psubKey)) {
+                this.subscribeSet.delete(psubKey);
+                if (this.subscribeSet.has(psubKey) === false) {
+                  this.subClient.unsubscribe(psubKey);
+                  // console.log(`unsubscribe ${psubKey}`);
                 }
               }
+
             });
           }
 
