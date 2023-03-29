@@ -94,6 +94,10 @@ export function createAdapter(
   };
 }
 
+function getSocketId(request) {
+  return request.opts.rooms.at(0);
+}
+
 export class RedisAdapter extends Adapter {
   public readonly uid;
   public readonly requestsTimeout: number;
@@ -109,9 +113,10 @@ export class RedisAdapter extends Adapter {
   private redisListeners: Map<string, Function> = new Map();
 
   // by sorilove: 구독 채널 목록
-  // private psubscribeSet = new Set();
   private subscribeSet = new Set();
   private isCustom = false;
+  private socketsInRoom: Map<string, Set<string>> = new Map();
+  private roomInfoBySocket: Map<string, Set<string>> = new Map();
 
   /**
    * Adapter constructor.
@@ -205,6 +210,10 @@ export class RedisAdapter extends Adapter {
     registerFriendlyErrorHandler(this.subClient);
   }
 
+  private createSubKey(room: string) {
+    return `${this.channel}${room}#`;
+  }
+
   /**
    * Called with a subscription message
    *
@@ -277,6 +286,12 @@ export class RedisAdapter extends Adapter {
 
     debug("received request %j", request);
 
+    let sockets = [];
+    if (request && request.opts && request.opts.rooms) {
+      sockets = request.opts.rooms.filter(room => this.nsp.sockets.get(room) !== undefined);
+    }
+    const isCurrentInstance = sockets.length > 0 ? true : false;
+
     let response, socket;
 
     switch (request.type) {
@@ -316,23 +331,34 @@ export class RedisAdapter extends Adapter {
           };
 
           // by sorilove: join할 때, room 이름으로 구독하자!
-          if (this.isCustom) {
-            request.rooms.forEach((room) => {
-              const psubKey = `${this.channel}${room}#`;
-              // console.log("psubKey", psubKey);
-              
-              // -------------------------------------------->
-              // if (this.psubscribeSet.has(psubKey) === false) {
-              //   this.subClient.psubscribe(psubKey);
-              //   // console.log(`psubscribe ${psubKey}`);
-              // }
-              // this.psubscribeSet.add(psubKey);
-              // <--------------------------------------------
-              if (this.subscribeSet.has(psubKey) === false) {
-                this.subClient.subscribe(psubKey);
-                // console.log(`subscribe ${psubKey}`);
+          if (this.isCustom && isCurrentInstance) {
+            const socketId = getSocketId(request);
+            request.rooms.forEach(room => {
+              // 소켓에 대한 기본 정보가 없다면 생성한다.
+              if (!this.roomInfoBySocket.has(socketId)) {
+                this.roomInfoBySocket.set(socketId, new Set());
               }
-              this.subscribeSet.add(psubKey);
+              // 소켓에 대한 룸 정보를 추가한다.
+              this.roomInfoBySocket.get(socketId).add(room);
+
+              // 룸에 대한 기본 정보가 없다면 생성한다.
+              if (!this.socketsInRoom.has(room)) {
+                this.socketsInRoom.set(room, new Set());
+              }
+
+              // 현 룸에 소켓이 없다면 추가한다.
+              if (!this.socketsInRoom.get(room).has(socketId)) {
+                this.socketsInRoom.get(room).add(socketId);
+              }
+
+              const subKey = this.createSubKey(room);
+              // console.log(`subKey: ${subKey} / room: ${request.opts.rooms}`);
+
+              if (this.subscribeSet.has(subKey) === false) {
+                this.subClient.subscribe(subKey);
+                // console.log(`subscribe ${subKey} - ${request.opts.rooms}`);
+              }
+              this.subscribeSet.add(subKey);
             });
           }
 
@@ -362,27 +388,51 @@ export class RedisAdapter extends Adapter {
 
           // by sorilove: leave할 때, room 이름으로 구독 해제하자!
           if (this.isCustom) {
-            request.rooms.forEach((room) => {
-              const psubKey = `${this.channel}${room}#`;
+            const socketId = getSocketId(request);
+            const roomInfos = this.roomInfoBySocket.get(socketId) || new Set();
 
-              // -------------------------------------------->
-              // if (this.psubscribeSet.has(psubKey)) {
-              //   this.psubscribeSet.delete(psubKey);
-              //   if (this.psubscribeSet.has(psubKey) === false) {
-              //     this.subClient.punsubscribe(psubKey);
-              //     // console.log(`punsubscribe ${psubKey}`);
-              //   }
-              // }
-              // <--------------------------------------------
-              if (this.subscribeSet.has(psubKey)) {
-                this.subscribeSet.delete(psubKey);
-                if (this.subscribeSet.has(psubKey) === false) {
-                  this.subClient.unsubscribe(psubKey);
-                  // console.log(`unsubscribe ${psubKey}`);
+            const unsubscribe = (room: string) => {
+              const sockets = this.socketsInRoom.get(room) || new Set();
+              sockets.delete(socketId);
+
+              // 해당 room 에 소켓이 없다면 room 정보를 삭제한다.
+              if (sockets.size === 0) {
+                this.socketsInRoom.delete(room);
+
+                const subKey = this.createSubKey(room);
+                if (this.subscribeSet.has(subKey)) {
+                  this.subscribeSet.delete(subKey);
+                  if (this.subscribeSet.has(subKey) === false) {
+                    this.subClient.unsubscribe(subKey);
+                    // console.log(`unsubscribe ${subKey}`);
+                  }
                 }
               }
+            }
 
-            });
+            // 현재 인스턴스에 속한 소켓이면서 request.rooms 에 정보가 있다면
+            if (request.rooms.length > 0 && isCurrentInstance) {
+              // 순수하게 room 에서 leave 하는 경우임
+              request.rooms.forEach(room => {
+
+                // 룸 정보를 삭제한다.
+                roomInfos.delete(room);
+                unsubscribe(room);
+
+              });
+            } else if (roomInfos.size > 0 && !isCurrentInstance) {
+              // 현재 인스턴스에 속하지 않은 소켓이면서, roomInfos 에 정보가 있다면 
+              // 소켓이 제거된 경우이므로 모든 room 에서 leave 한다.
+              const rooms = [...roomInfos];
+              rooms.forEach(room => {
+
+                // 룸 정보를 삭제한다.
+                roomInfos.delete(room);
+                unsubscribe(room);
+
+              });
+
+            }
           }
 
           return super.delSockets(opts, request.rooms);
@@ -410,19 +460,10 @@ export class RedisAdapter extends Adapter {
           };
 
           // by sorilove: leave할 때, room 이름으로 구독 해제하자!
-          if (this.isCustom) {
-            request.rooms.forEach((room) => {
+          if (this.isCustom && isCurrentInstance) {
+            request.rooms.forEach(room => {
               const psubKey = `${this.channel}${room}#`;
 
-              // -------------------------------------------->
-              // if (this.psubscribeSet.has(psubKey)) {
-              //   this.psubscribeSet.delete(psubKey);
-              //   if (this.psubscribeSet.has(psubKey) === false) {
-              //     this.subClient.punsubscribe(psubKey);
-              //     // console.log(`punsubscribe ${psubKey}`);
-              //   }
-              // }
-              // <--------------------------------------------
               if (this.subscribeSet.has(psubKey)) {
                 this.subscribeSet.delete(psubKey);
                 if (this.subscribeSet.has(psubKey) === false) {
@@ -430,7 +471,6 @@ export class RedisAdapter extends Adapter {
                   // console.log(`unsubscribe ${psubKey}`);
                 }
               }
-
             });
           }
 
@@ -1050,10 +1090,13 @@ export class RedisAdapter extends Adapter {
       );
     } else {
       // by sorilove: unsubscribe all channels
-      if (!this.isCustom) {
+      if (this.isCustom) {
+        this.subscribeSet.forEach((channel) => {
+          this.subClient.unsubscribe(channel);
+        });
+      } else {
         this.subClient.punsubscribe(this.channel + "*");
       }
-
       this.subClient.off(
         "pmessageBuffer",
         this.redisListeners.get("pmessageBuffer")
