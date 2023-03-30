@@ -263,10 +263,11 @@ export class RedisAdapter extends Adapter {
    */
   private async onrequest(channel, msg) {
     channel = channel.toString();
-
+    
     if (channel.startsWith(this.responseChannel)) {
       return this.onresponse(channel, msg);
     } else if (!channel.startsWith(this.requestChannel)) {
+      this.onmessage(null, channel, msg);
       return debug("ignore different channel");
     }
 
