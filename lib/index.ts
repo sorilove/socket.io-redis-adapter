@@ -1,6 +1,6 @@
 import uid2 = require("uid2");
 import msgpack = require("notepack.io");
-import { Adapter, BroadcastOptions, Room, SocketId } from "socket.io-adapter";
+import { Adapter, BroadcastOptions, Room } from "socket.io-adapter";
 
 const debug = require("debug")("socket.io-redis");
 
@@ -86,15 +86,14 @@ export interface RedisAdapterOptions {
 export function createAdapter(
   pubClient: any,
   subClient: any,
-  opts?: Partial<RedisAdapterOptions>,
-  isCustom = false
+  opts?: Partial<RedisAdapterOptions>
 ) {
   return function (nsp) {
-    return new RedisAdapter(nsp, pubClient, subClient, opts, isCustom);
+    return new RedisAdapter(nsp, pubClient, subClient, opts);
   };
 }
 
-function getSocketId(request) {
+function sidOf(request) {
   return request.opts.rooms.at(0);
 }
 
@@ -107,16 +106,15 @@ export class RedisAdapter extends Adapter {
   private readonly channel: string;
   private readonly requestChannel: string;
   private readonly responseChannel: string;
+  private readonly specificRequestChannel: string;
   private readonly specificResponseChannel: string;
   private requests: Map<string, Request> = new Map();
   private ackRequests: Map<string, AckRequest> = new Map();
   private redisListeners: Map<string, Function> = new Map();
 
-  // by sorilove: 구독 채널 목록
-  private subscribeSet = new Set();
-  private isCustom = false;
-  private socketsInRoom: Map<string, Set<string>> = new Map();
-  private roomInfoBySocket: Map<string, Set<string>> = new Map();
+  private subscribings = new Set<string>();
+  private sidsBy = new Map<string, Set<string>>();
+  private roomsBy = new Map<string, Set<string>>();
 
   /**
    * Adapter constructor.
@@ -132,8 +130,7 @@ export class RedisAdapter extends Adapter {
     nsp: any,
     readonly pubClient: any,
     readonly subClient: any,
-    opts: Partial<RedisAdapterOptions> = {},
-    isCustom = false
+    opts: Partial<RedisAdapterOptions> = {}
   ) {
     super(nsp);
 
@@ -147,6 +144,7 @@ export class RedisAdapter extends Adapter {
     this.channel = prefix + "#" + nsp.name + "#";
     this.requestChannel = prefix + "-request#" + this.nsp.name + "#";
     this.responseChannel = prefix + "-response#" + this.nsp.name + "#";
+    this.specificRequestChannel = this.requestChannel + this.uid + "#";
     this.specificResponseChannel = this.responseChannel + this.uid + "#";
 
     const isRedisV4 = typeof this.pubClient.pSubscribe === "function";
@@ -177,11 +175,6 @@ export class RedisAdapter extends Adapter {
       this.redisListeners.set("pmessageBuffer", this.onmessage.bind(this));
       this.redisListeners.set("messageBuffer", this.onrequest.bind(this));
 
-      // by sorilove: 패턴으로 구독하지 말자!
-      this.isCustom = isCustom;
-      if (!this.isCustom) {
-        this.subClient.psubscribe(this.channel + "*");
-      }
       this.subClient.on(
         "pmessageBuffer",
         this.redisListeners.get("pmessageBuffer")
@@ -190,7 +183,8 @@ export class RedisAdapter extends Adapter {
       this.subClient.subscribe([
         this.requestChannel,
         this.responseChannel,
-        this.specificResponseChannel,
+        this.specificRequestChannel,
+        this.specificResponseChannel
       ]);
       this.subClient.on(
         "messageBuffer",
@@ -208,10 +202,6 @@ export class RedisAdapter extends Adapter {
 
     registerFriendlyErrorHandler(this.pubClient);
     registerFriendlyErrorHandler(this.subClient);
-  }
-
-  private createSubKey(room: string) {
-    return `${this.channel}${room}#`;
   }
 
   /**
@@ -263,11 +253,14 @@ export class RedisAdapter extends Adapter {
    */
   private async onrequest(channel, msg) {
     channel = channel.toString();
-    
-    if (channel.startsWith(this.responseChannel)) {
+
+    if (channel.startsWith(this.channel)) {
+      return this.onmessage(null, channel, msg);
+    }
+    else if (channel.startsWith(this.responseChannel)) {
       return this.onresponse(channel, msg);
-    } else if (!channel.startsWith(this.requestChannel)) {
-      this.onmessage(null, channel, msg);
+    }
+    else if (!channel.startsWith(this.specificRequestChannel) && !channel.startsWith(this.requestChannel)) {
       return debug("ignore different channel");
     }
 
@@ -286,12 +279,6 @@ export class RedisAdapter extends Adapter {
     }
 
     debug("received request %j", request);
-
-    let sockets = [];
-    if (request && request.opts && request.opts.rooms) {
-      sockets = request.opts.rooms.filter(room => this.nsp.sockets.get(room) !== undefined);
-    }
-    const isCurrentInstance = sockets.length > 0 ? true : false;
 
     let response, socket;
 
@@ -326,43 +313,11 @@ export class RedisAdapter extends Adapter {
 
       case RequestType.REMOTE_JOIN:
         if (request.opts) {
+          this.postjoin(request);
           const opts = {
             rooms: new Set<Room>(request.opts.rooms),
             except: new Set<Room>(request.opts.except),
           };
-
-          // by sorilove: join할 때, room 이름으로 구독하자!
-          if (this.isCustom && isCurrentInstance) {
-            const socketId = getSocketId(request);
-            request.rooms.forEach(room => {
-              // 소켓에 대한 기본 정보가 없다면 생성한다.
-              if (!this.roomInfoBySocket.has(socketId)) {
-                this.roomInfoBySocket.set(socketId, new Set());
-              }
-              // 소켓에 대한 룸 정보를 추가한다.
-              this.roomInfoBySocket.get(socketId).add(room);
-
-              // 룸에 대한 기본 정보가 없다면 생성한다.
-              if (!this.socketsInRoom.has(room)) {
-                this.socketsInRoom.set(room, new Set());
-              }
-
-              // 현 룸에 소켓이 없다면 추가한다.
-              if (!this.socketsInRoom.get(room).has(socketId)) {
-                this.socketsInRoom.get(room).add(socketId);
-              }
-
-              const subKey = this.createSubKey(room);
-              // console.log(`subKey: ${subKey} / room: ${request.opts.rooms}`);
-
-              if (this.subscribeSet.has(subKey) === false) {
-                this.subClient.subscribe(subKey);
-                // console.log(`subscribe ${subKey} - ${request.opts.rooms}`);
-              }
-              this.subscribeSet.add(subKey);
-            });
-          }
-
           return super.addSockets(opts, request.rooms);
         }
 
@@ -382,60 +337,11 @@ export class RedisAdapter extends Adapter {
 
       case RequestType.REMOTE_LEAVE:
         if (request.opts) {
+          this.postleave(request);
           const opts = {
             rooms: new Set<Room>(request.opts.rooms),
             except: new Set<Room>(request.opts.except),
           };
-
-          // by sorilove: leave할 때, room 이름으로 구독 해제하자!
-          if (this.isCustom) {
-            const socketId = getSocketId(request);
-            const roomInfos = this.roomInfoBySocket.get(socketId) || new Set();
-
-            const unsubscribe = (room: string) => {
-              const sockets = this.socketsInRoom.get(room) || new Set();
-              sockets.delete(socketId);
-
-              // 해당 room 에 소켓이 없다면 room 정보를 삭제한다.
-              if (sockets.size === 0) {
-                this.socketsInRoom.delete(room);
-
-                const subKey = this.createSubKey(room);
-                if (this.subscribeSet.has(subKey)) {
-                  this.subscribeSet.delete(subKey);
-                  if (this.subscribeSet.has(subKey) === false) {
-                    this.subClient.unsubscribe(subKey);
-                    // console.log(`unsubscribe ${subKey}`);
-                  }
-                }
-              }
-            }
-
-            // 현재 인스턴스에 속한 소켓이면서 request.rooms 에 정보가 있다면
-            if (request.rooms.length > 0 && isCurrentInstance) {
-              // 순수하게 room 에서 leave 하는 경우임
-              request.rooms.forEach(room => {
-
-                // 룸 정보를 삭제한다.
-                roomInfos.delete(room);
-                unsubscribe(room);
-
-              });
-            } else if (roomInfos.size > 0 && !isCurrentInstance) {
-              // 현재 인스턴스에 속하지 않은 소켓이면서, roomInfos 에 정보가 있다면 
-              // 소켓이 제거된 경우이므로 모든 room 에서 leave 한다.
-              const rooms = [...roomInfos];
-              rooms.forEach(room => {
-
-                // 룸 정보를 삭제한다.
-                roomInfos.delete(room);
-                unsubscribe(room);
-
-              });
-
-            }
-          }
-
           return super.delSockets(opts, request.rooms);
         }
 
@@ -455,26 +361,11 @@ export class RedisAdapter extends Adapter {
 
       case RequestType.REMOTE_DISCONNECT:
         if (request.opts) {
+          this.postdisconnect(request);
           const opts = {
             rooms: new Set<Room>(request.opts.rooms),
             except: new Set<Room>(request.opts.except),
           };
-
-          // by sorilove: leave할 때, room 이름으로 구독 해제하자!
-          if (this.isCustom && isCurrentInstance) {
-            request.rooms.forEach(room => {
-              const psubKey = `${this.channel}${room}#`;
-
-              if (this.subscribeSet.has(psubKey)) {
-                this.subscribeSet.delete(psubKey);
-                if (this.subscribeSet.has(psubKey) === false) {
-                  this.subClient.unsubscribe(psubKey);
-                  // console.log(`unsubscribe ${psubKey}`);
-                }
-              }
-            });
-          }
-
           return super.disconnectSockets(opts, request.close);
         }
 
@@ -595,6 +486,78 @@ export class RedisAdapter extends Adapter {
       default:
         debug("ignoring unknown request type: %s", request.type);
     }
+  }
+
+  private channelOf(room: string) {
+    return `${this.channel}${room}#`;
+  }
+
+  private postjoin(request) {
+    const sid = sidOf(request);
+    request.rooms.forEach(room => {
+      let rooms = this.roomsBy.get(sid);
+      if (rooms === undefined) {
+        this.roomsBy.set(sid, rooms = new Set());
+      }
+      rooms.add(room);
+      let sids = this.sidsBy.get(room);
+      if (sids === undefined) {
+        this.sidsBy.set(room, sids = new Set());
+      }
+      sids.add(sid);
+      const channel = this.channelOf(room);
+      if (!this.subscribings.has(channel)) {
+        this.subClient.subscribe(channel);
+        this.subscribings.add(channel);
+      }
+    });
+  }
+
+  private postleave(request) {
+    const tryunsubscribe = (room: string) => {
+      const sids = this.sidsBy.get(room);
+      if (sids === undefined) {
+        return;
+      }
+      sids.delete(sid);
+      if (sids.size === 0) {
+        this.sidsBy.delete(room);
+        const channel = this.channelOf(room);
+        if (this.subscribings.has(channel)) {
+          this.subClient.unsubscribe(channel);
+          this.subscribings.delete(channel);
+        }
+      }
+    };
+
+    const sid = sidOf(request);
+    const rooms = this.roomsBy.get(sid);
+    if (rooms === undefined) {
+      return;
+    }
+    const socket = this.nsp.sockets.get(sid);
+    if (socket !== undefined) {
+      request.rooms.forEach(room => {
+        rooms.delete(room);
+        tryunsubscribe(room);
+      });
+    }
+    else {
+      rooms.forEach(room => {
+        tryunsubscribe(room);
+      });
+      this.roomsBy.delete(sid);
+    }
+  }
+
+  private postdisconnect(request) {
+    request.rooms.forEach(room => {
+      const channel = this.channelOf(room);
+      if (this.subscribings.has(channel)) {
+        this.subClient.unsubscribe(channel);
+        this.subscribings.delete(channel);
+      }
+    });
   }
 
   /**
@@ -913,10 +876,10 @@ export class RedisAdapter extends Adapter {
         rooms: [...opts.rooms],
         except: [...opts.except],
       },
-      rooms: [...rooms],
+      rooms: [...rooms]
     });
 
-    this.pubClient.publish(this.requestChannel, request);
+    this.pubClient.publish(this.specificRequestChannel, request);
   }
 
   public delSockets(opts: BroadcastOptions, rooms: Room[]) {
@@ -931,10 +894,10 @@ export class RedisAdapter extends Adapter {
         rooms: [...opts.rooms],
         except: [...opts.except],
       },
-      rooms: [...rooms],
+      rooms: [...rooms]
     });
 
-    this.pubClient.publish(this.requestChannel, request);
+    this.pubClient.publish(this.specificRequestChannel, request);
   }
 
   public disconnectSockets(opts: BroadcastOptions, close: boolean) {
@@ -952,7 +915,7 @@ export class RedisAdapter extends Adapter {
       close,
     });
 
-    this.pubClient.publish(this.requestChannel, request);
+    this.pubClient.publish(this.specificRequestChannel, request);
   }
 
   public serverSideEmit(packet: any[]): void {
@@ -1090,14 +1053,9 @@ export class RedisAdapter extends Adapter {
         true
       );
     } else {
-      // by sorilove: unsubscribe all channels
-      if (this.isCustom) {
-        this.subscribeSet.forEach((channel) => {
-          this.subClient.unsubscribe(channel);
-        });
-      } else {
-        this.subClient.punsubscribe(this.channel + "*");
-      }
+      this.subscribings.forEach(channel => {
+        this.subClient.unsubscribe(channel);
+      });
       this.subClient.off(
         "pmessageBuffer",
         this.redisListeners.get("pmessageBuffer")
