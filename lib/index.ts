@@ -490,12 +490,11 @@ export class RedisAdapter extends Adapter {
   }
 
   private postjoin(request) {
-    const socket = this.nsp.sockets.get(sidOf(request));
+    const sid = sidOf(request);
+    const socket = this.nsp.sockets.get(sid);
     if (!socket) {
       return;
     }
-
-    const sid = sidOf(request);
     request.rooms.forEach(room => {
       let rooms = this.roomsBy.get(sid);
       if (rooms === undefined) {
