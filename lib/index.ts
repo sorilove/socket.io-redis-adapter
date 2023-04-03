@@ -490,7 +490,7 @@ export class RedisAdapter extends Adapter {
   }
 
   private postjoin(request) {
-    const socket = this.nsp.sockets.get(request.sid);
+    const socket = this.nsp.sockets.get(sidOf(request));
     if (!socket) {
       return;
     }
