@@ -106,7 +106,6 @@ export class RedisAdapter extends Adapter {
   private readonly channel: string;
   private readonly requestChannel: string;
   private readonly responseChannel: string;
-  private readonly specificRequestChannel: string;
   private readonly specificResponseChannel: string;
   private requests: Map<string, Request> = new Map();
   private ackRequests: Map<string, AckRequest> = new Map();
@@ -144,7 +143,6 @@ export class RedisAdapter extends Adapter {
     this.channel = prefix + "#" + nsp.name + "#";
     this.requestChannel = prefix + "-request#" + this.nsp.name + "#";
     this.responseChannel = prefix + "-response#" + this.nsp.name + "#";
-    this.specificRequestChannel = this.requestChannel + this.uid + "#";
     this.specificResponseChannel = this.responseChannel + this.uid + "#";
 
     const isRedisV4 = typeof this.pubClient.pSubscribe === "function";
@@ -183,7 +181,6 @@ export class RedisAdapter extends Adapter {
       this.subClient.subscribe([
         this.requestChannel,
         this.responseChannel,
-        this.specificRequestChannel,
         this.specificResponseChannel
       ]);
       this.subClient.on(
@@ -260,7 +257,7 @@ export class RedisAdapter extends Adapter {
     else if (channel.startsWith(this.responseChannel)) {
       return this.onresponse(channel, msg);
     }
-    else if (!channel.startsWith(this.specificRequestChannel) && !channel.startsWith(this.requestChannel)) {
+    else if (!channel.startsWith(this.requestChannel)) {
       return debug("ignore different channel");
     }
 
@@ -292,7 +289,7 @@ export class RedisAdapter extends Adapter {
 
         response = JSON.stringify({
           requestId: request.requestId,
-          sockets: [...sockets],
+          sockets: [...sockets]
         });
 
         this.publishResponse(request, response);
@@ -305,7 +302,7 @@ export class RedisAdapter extends Adapter {
 
         response = JSON.stringify({
           requestId: request.requestId,
-          rooms: [...this.rooms.keys()],
+          rooms: [...this.rooms.keys()]
         });
 
         this.publishResponse(request, response);
@@ -403,7 +400,7 @@ export class RedisAdapter extends Adapter {
               id: socket.id,
               handshake,
               rooms: [...socket.rooms],
-              data: socket.data,
+              data: socket.data
             };
           }),
         });
@@ -493,6 +490,11 @@ export class RedisAdapter extends Adapter {
   }
 
   private postjoin(request) {
+    const socket = this.nsp.sockets.get(request.sid);
+    if (!socket) {
+      return;
+    }
+
     const sid = sidOf(request);
     request.rooms.forEach(room => {
       let rooms = this.roomsBy.get(sid);
@@ -714,7 +716,7 @@ export class RedisAdapter extends Adapter {
       const rawOpts = {
         rooms: [...opts.rooms],
         except: [...new Set(opts.except)],
-        flags: opts.flags,
+        flags: opts.flags
       };
       const msg = this.parser.encode([this.uid, packet, rawOpts]);
       let channel = this.channel;
@@ -743,7 +745,7 @@ export class RedisAdapter extends Adapter {
       const rawOpts = {
         rooms: [...opts.rooms],
         except: [...new Set(opts.except)],
-        flags: opts.flags,
+        flags: opts.flags
       };
 
       const request = this.parser.encode({
@@ -837,7 +839,7 @@ export class RedisAdapter extends Adapter {
       type: RequestType.REMOTE_FETCH,
       opts: {
         rooms: [...opts.rooms],
-        except: [...opts.except],
+        except: [...opts.except]
       },
     });
 
@@ -874,12 +876,12 @@ export class RedisAdapter extends Adapter {
       type: RequestType.REMOTE_JOIN,
       opts: {
         rooms: [...opts.rooms],
-        except: [...opts.except],
+        except: [...opts.except]
       },
       rooms: [...rooms]
     });
 
-    this.pubClient.publish(this.specificRequestChannel, request);
+    this.pubClient.publish(this.requestChannel, request);
   }
 
   public delSockets(opts: BroadcastOptions, rooms: Room[]) {
@@ -892,12 +894,12 @@ export class RedisAdapter extends Adapter {
       type: RequestType.REMOTE_LEAVE,
       opts: {
         rooms: [...opts.rooms],
-        except: [...opts.except],
+        except: [...opts.except]
       },
       rooms: [...rooms]
     });
 
-    this.pubClient.publish(this.specificRequestChannel, request);
+    this.pubClient.publish(this.requestChannel, request);
   }
 
   public disconnectSockets(opts: BroadcastOptions, close: boolean) {
@@ -910,12 +912,12 @@ export class RedisAdapter extends Adapter {
       type: RequestType.REMOTE_DISCONNECT,
       opts: {
         rooms: [...opts.rooms],
-        except: [...opts.except],
+        except: [...opts.except]
       },
       close,
     });
 
-    this.pubClient.publish(this.specificRequestChannel, request);
+    this.pubClient.publish(this.requestChannel, request);
   }
 
   public serverSideEmit(packet: any[]): void {
@@ -973,7 +975,7 @@ export class RedisAdapter extends Adapter {
       numSub,
       timeout,
       resolve: ack,
-      responses: [],
+      responses: []
     });
 
     this.pubClient.publish(this.requestChannel, request);
