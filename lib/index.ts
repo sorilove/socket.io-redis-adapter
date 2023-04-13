@@ -154,8 +154,12 @@ export class RedisAdapter extends Adapter {
     );
 
     this.subClient.ssubscribe([
-      this.requestChannel,
-      this.responseChannel,
+      this.requestChannel
+    ]);
+    this.subClient.ssubscribe([
+      this.responseChannel
+    ]);
+    this.subClient.ssubscribe([
       this.specificResponseChannel
     ]);
     this.subClient.on(
@@ -1011,9 +1015,13 @@ export class RedisAdapter extends Adapter {
     );
 
     this.subClient.sunsubscribe([
-      this.requestChannel,
-      this.responseChannel,
-      this.specificResponseChannel,
+      this.requestChannel
+    ]);
+    this.subClient.sunsubscribe([
+      this.responseChannel
+    ]);
+    this.subClient.sunsubscribe([
+      this.specificResponseChannel
     ]);
     this.subClient.off(
       "smessageBuffer",
