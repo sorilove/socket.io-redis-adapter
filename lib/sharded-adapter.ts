@@ -63,7 +63,6 @@ class ShardedRedisAdapter extends ClusterAdapter {
       sids.add(sid);
       const channel = this.channelOf(room);
       if (!this.subscribings.has(channel)) {
-        console.log(`postjoin - ssubscribe ${channel}`);
         this.subClient.sSubscribe(channel, this.listener, RETURN_BUFFERS);
         this.subscribings.add(channel);
       }
@@ -81,7 +80,6 @@ class ShardedRedisAdapter extends ClusterAdapter {
         this.sidsBy.delete(room);
         const channel = this.channelOf(room);
         if (this.subscribings.has(channel)) {
-          console.log(`postjoin - sUnsubscribe ${channel}`);
           this.subClient.sUnsubscribe(channel, this.listener);
           this.subscribings.delete(channel);
         }
@@ -145,10 +143,18 @@ class ShardedRedisAdapter extends ClusterAdapter {
     this.subClient.sSubscribe(this.responseChannel, handler, RETURN_BUFFERS);
 
     this.cleanup = () => {
-      return Promise.all([
+      const clenupJobs = [
         this.subClient.sUnsubscribe(this.channel, handler),
         this.subClient.sUnsubscribe(this.responseChannel, handler),
-      ]);
+      ];
+
+      this.subscribings.forEach(channel => {
+        this.subClient.sUnsubscribe(channel, this.listener);
+      });
+
+      this.subscribings.clear();
+
+      return Promise.all(clenupJobs);
     };
   }
 
@@ -162,7 +168,7 @@ class ShardedRedisAdapter extends ClusterAdapter {
     const channel = message.data.opts.rooms?.length === 1 ?
       this.channelOf(message.data.opts.rooms.at(0)) :
       this.channel;
-    
+
     this.pubClient.sPublish(channel, this.encode(message));
 
     return Promise.resolve("");

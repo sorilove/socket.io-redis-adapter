@@ -171,6 +171,7 @@ export abstract class ClusterAdapter extends Adapter {
         break;
 
       case MessageType.DISCONNECT_SOCKETS:
+        this.postdisconnect(message.data);
         super.disconnectSockets(
           decodeOptions(message.data.opts),
           message.data.close as boolean
@@ -427,6 +428,15 @@ export abstract class ClusterAdapter extends Adapter {
   }
 
   override disconnectSockets(opts: BroadcastOptions, close: boolean) {
+    const message = {
+      type: MessageType.DISCONNECT_SOCKETS,
+      data: {
+        opts: encodeOptions(opts),
+        close,
+      },
+    };
+    
+    this.postdisconnect(message.data);
     super.disconnectSockets(opts, close);
 
     const onlyLocal = opts.flags?.local;
@@ -434,13 +444,7 @@ export abstract class ClusterAdapter extends Adapter {
       return;
     }
 
-    this.publish({
-      type: MessageType.DISCONNECT_SOCKETS,
-      data: {
-        opts: encodeOptions(opts),
-        close,
-      },
-    });
+    this.publish(message);
   }
 
   async fetchSockets(opts: BroadcastOptions): Promise<any[]> {
