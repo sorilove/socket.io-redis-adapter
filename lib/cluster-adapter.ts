@@ -459,7 +459,7 @@ export abstract class ClusterAdapter extends Adapter {
     }
 
     const requestId = randomId();
-
+    
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         const storedRequest = this.requests.get(requestId);
@@ -471,7 +471,7 @@ export abstract class ClusterAdapter extends Adapter {
           );
           this.requests.delete(requestId);
         }
-      }, opts.flags.timeout || DEFAULT_TIMEOUT);
+      }, opts.flags?.timeout || DEFAULT_TIMEOUT);
 
       const storedRequest = {
         type: MessageType.FETCH_SOCKETS,

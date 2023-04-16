@@ -165,11 +165,21 @@ class ShardedRedisAdapter extends ClusterAdapter {
   override publishMessage(message) {
     debug("publishing message of type %s to %s", message.type, this.channel);
 
-    const channel = message.data.opts.rooms?.length === 1 ?
-      this.channelOf(message.data.opts.rooms.at(0)) :
-      this.channel;
+    switch (message.type) {
+      case MessageType.SOCKETS_JOIN:
+      case MessageType.SOCKETS_LEAVE:
+      case MessageType.FETCH_SOCKETS:
+      case MessageType.SERVER_SIDE_EMIT:
+        this.pubClient.sPublish(this.channel, this.encode(message));
+        break;
+      default: {
+        const channel = message.data.opts.rooms?.length === 1 ?
+          this.channelOf(message.data.opts.rooms.at(0)) :
+          this.channel;
 
-    this.pubClient.sPublish(channel, this.encode(message));
+        this.pubClient.sPublish(channel, this.encode(message));
+      }
+    }
 
     return Promise.resolve("");
   }
@@ -211,33 +221,16 @@ class ShardedRedisAdapter extends ClusterAdapter {
       return debug("invalid format: %s", e.message);
     }
 
-    if (channel.toString().startsWith(this.channel)) {
-      this.onMessage(message, "");
-    } else {
+    if (channel.toString() === this.responseChannel) {
       this.onResponse(message);
+    } else if (channel.toString().startsWith(this.channel)) {
+      this.onMessage(message, "");
     }
   }
 
   override serverCount(): Promise<number> {
-    if (
-      this.pubClient.constructor.name === "Cluster" ||
-      this.pubClient.isCluster
-    ) {
-      return Promise.all(
-        this.pubClient.nodes().map((node) => {
-          node.sendCommand(["PUBSUB", "SHARDNUMSUB", this.channel]);
-        })
-      ).then((values) => {
-        let numSub = 0;
-        values.map((value) => {
-          numSub += parseInt(value[1], 10);
-        });
-        return numSub;
-      });
-    } else {
-      return this.pubClient
-        .sendCommand(["PUBSUB", "SHARDNUMSUB", this.channel])
-        .then((res) => parseInt(res[1], 10));
-    }
+    return this.pubClient
+      .sendCommand(this.channel, true, ["PUBSUB", "SHARDNUMSUB", this.channel])
+      .then((res) => parseInt(res[1], 10));
   }
 }
