@@ -46,7 +46,8 @@ class ShardedRedisAdapter extends ClusterAdapter {
 
   protected postjoin(message: { opts, rooms }) {
     const sid = sidOf(message.opts);
-    if (!sid) {
+    const socket = this.nsp.sockets.get(sid);
+    if (!socket) {
       return;
     }
 
