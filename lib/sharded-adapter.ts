@@ -265,8 +265,9 @@ class ShardedRedisAdapter extends ClusterAdapter {
       });
     } else {
       // When using node-redis
+      const ch = this.requestOf(this.channels[Math.floor(Math.random() * Number.MAX_SAFE_INTEGER) % this.channels.length]);
       return this.pubClient
-        .sendCommand(this.channel, true, ["PUBSUB", "SHARDNUMSUB", this.channel])
+        .sendCommand(ch, true, ["PUBSUB", "SHARDNUMSUB", ch])
         .then((res) => parseInt(res[1], 10));
     }
   }
