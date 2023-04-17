@@ -229,8 +229,23 @@ class ShardedRedisAdapter extends ClusterAdapter {
   }
 
   override serverCount(): Promise<number> {
-    return this.pubClient
-      .sendCommand(this.channel, true, ["PUBSUB", "SHARDNUMSUB", this.channel])
-      .then((res) => parseInt(res[1], 10));
+    if (this.pubClient.constructor.name === "Cluster" || this.pubClient.isCluster) {
+      return Promise.all(
+        this.pubClient.nodes().map((node) => {
+          node.sendCommand(["PUBSUB", "SHARDNUMSUB", this.channel]);
+        })
+      ).then((values) => {
+        let numSub = 0;
+        values.map((value) => {
+          numSub += parseInt(value[1], 10);
+        });
+        return numSub;
+      });
+    } else {
+      // When using node-redis
+      return this.pubClient
+        .sendCommand(this.channel, true, ["PUBSUB", "SHARDNUMSUB", this.channel])
+        .then((res) => parseInt(res[1], 10));
+    }
   }
 }
