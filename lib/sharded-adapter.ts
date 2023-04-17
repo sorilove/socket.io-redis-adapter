@@ -33,21 +33,21 @@ class ShardedRedisAdapter extends ClusterAdapter {
   private readonly responseChannel: string;
   private readonly cleanup: () => void;
   private readonly channels = [
-    "22875b37634b623d",
-    "ce39dec419241609",
-    "47d42480898b8bad",
-    "ec742dac81a4d1e0",
-    "5195e1b686a4bb0e",
-    "342168b666f66fdb",
-    "14ace7516d4f0b85",
-    "a573d236b0c22d29",
-    "d9b828277d28a271",
-    "674d540ee62298c7",
-    "0e790202c43e88bd",
-    "c237fd9d887be1e1",
-    "fd49c6ac253efb65",
-    "7db4a143c8c04c89",
-    "c2cf1a7f2e6d5acd"
+    "36b2ef009e0a49b5",
+    "a1636b8f971d3ad1",
+    "393fd9690cbdbeb3",
+    "46a3e656dc1905d6",
+    "8cf7eaacb83c3f99",
+    "15f2fc77e4b03ebc",
+    "de25f266b001ce15",
+    "5fdbc2a4cac080d9",
+    "ea3152a340c09745",
+    "18ad333bc1dfb8fa",
+    "7043782f2636a861",
+    "eb812d88b8642ab6",
+    "c29ccffe7f6a6312",
+    "9d1f552aeb95a73d",
+    "73c69cee9bebee3a"
   ];
 
   // by sorilove --------------->
@@ -156,7 +156,7 @@ class ShardedRedisAdapter extends ClusterAdapter {
 
     const handler = (message, channel) => this.onRawMessage(message, channel);
 
-    //this.subClient.sSubscribe(this.channel, handler, RETURN_BUFFERS);
+    this.subClient.sSubscribe(this.channel, handler, RETURN_BUFFERS);
 
     this.channels.forEach(channel => {
       this.subClient.sSubscribe(this.requestOf(channel), handler, RETURN_BUFFERS);
@@ -166,7 +166,7 @@ class ShardedRedisAdapter extends ClusterAdapter {
 
     this.cleanup = () => {
       const clenupJobs = [
-        //this.subClient.sUnsubscribe(this.channel, handler),
+        this.subClient.sUnsubscribe(this.channel, handler),
         ...this.channels.map(channel => {
           this.subClient.sUnsubscribe(this.requestOf(channel), handler);
         }),
@@ -192,7 +192,7 @@ class ShardedRedisAdapter extends ClusterAdapter {
       case MessageType.SOCKETS_LEAVE:
       case MessageType.FETCH_SOCKETS:
       case MessageType.SERVER_SIDE_EMIT:
-        this.pubClient.sPublish(this.requestOf(this.channels[Math.random() % this.channels.length]), this.encode(message));
+        this.pubClient.sPublish(this.requestOf(this.channels[Math.floor(Math.random() * Number.MAX_SAFE_INTEGER) % this.channels.length]), this.encode(message));
         break;
       default: {
         const channel = message.data.opts.rooms?.length === 1 ?
