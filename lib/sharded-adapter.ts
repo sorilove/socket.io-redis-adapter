@@ -32,6 +32,23 @@ class ShardedRedisAdapter extends ClusterAdapter {
   private readonly channel: string;
   private readonly responseChannel: string;
   private readonly cleanup: () => void;
+  private readonly channels = [
+    "22875b37634b623d",
+    "ce39dec419241609",
+    "47d42480898b8bad",
+    "ec742dac81a4d1e0",
+    "5195e1b686a4bb0e",
+    "342168b666f66fdb",
+    "14ace7516d4f0b85",
+    "a573d236b0c22d29",
+    "d9b828277d28a271",
+    "674d540ee62298c7",
+    "0e790202c43e88bd",
+    "c237fd9d887be1e1",
+    "fd49c6ac253efb65",
+    "7db4a143c8c04c89",
+    "c2cf1a7f2e6d5acd"
+  ];
 
   // by sorilove --------------->
   private listener = (message, channel) => this.onRawMessage(message, channel);
@@ -42,6 +59,10 @@ class ShardedRedisAdapter extends ClusterAdapter {
 
   private channelOf(room: string) {
     return `${this.channel}${room}#`;
+  }
+
+  private requestOf(channel: string) {
+    return this.channelOf(`request#${channel}`)
   }
 
   protected postjoin(message: { opts, rooms }) {
@@ -128,31 +149,31 @@ class ShardedRedisAdapter extends ClusterAdapter {
     super(nsp);
     this.pubClient = pubClient;
     this.subClient = subClient;
-    this.opts = Object.assign(
-      {
-        channelPrefix: "socket.io",
-      },
-      opts
-    );
+    this.opts = Object.assign({ channelPrefix: "socket.io", }, opts);
 
     this.channel = `${this.opts.channelPrefix}#${nsp.name}#`;
     this.responseChannel = `${this.opts.channelPrefix}#${nsp.name}#${this.uid}#`;
 
     const handler = (message, channel) => this.onRawMessage(message, channel);
 
-    this.subClient.sSubscribe(this.channel, handler, RETURN_BUFFERS);
+    //this.subClient.sSubscribe(this.channel, handler, RETURN_BUFFERS);
+
+    this.channels.forEach(channel => {
+      this.subClient.sSubscribe(this.requestOf(channel), handler, RETURN_BUFFERS);
+    });
+
     this.subClient.sSubscribe(this.responseChannel, handler, RETURN_BUFFERS);
 
     this.cleanup = () => {
       const clenupJobs = [
-        this.subClient.sUnsubscribe(this.channel, handler),
+        //this.subClient.sUnsubscribe(this.channel, handler),
+        ...this.channels.map(channel => {
+          this.subClient.sUnsubscribe(this.requestOf(channel), handler);
+        }),
         this.subClient.sUnsubscribe(this.responseChannel, handler),
       ];
 
-      this.subscribings.forEach(channel => {
-        this.subClient.sUnsubscribe(channel, this.listener);
-      });
-
+      this.subscribings.forEach(channel => this.subClient.sUnsubscribe(channel, this.listener));
       this.subscribings.clear();
 
       return Promise.all(clenupJobs);
@@ -171,7 +192,7 @@ class ShardedRedisAdapter extends ClusterAdapter {
       case MessageType.SOCKETS_LEAVE:
       case MessageType.FETCH_SOCKETS:
       case MessageType.SERVER_SIDE_EMIT:
-        this.pubClient.sPublish(this.channel, this.encode(message));
+        this.pubClient.sPublish(this.requestOf(this.channels[Math.random() % this.channels.length]), this.encode(message));
         break;
       default: {
         const channel = message.data.opts.rooms?.length === 1 ?
