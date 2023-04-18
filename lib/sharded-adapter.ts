@@ -102,7 +102,7 @@ class ShardedRedisAdapter extends ClusterAdapter {
         this.sidsBy.delete(room);
         const channel = this.channelOf(room);
         if (this.subscribings.has(channel)) {
-          this.subClient.sUnsubscribe(channel, this.listener);
+          this.subClient.sUnsubscribe(channel, this.listener, RETURN_BUFFERS);
           this.subscribings.delete(channel);
         }
       }
@@ -166,14 +166,14 @@ class ShardedRedisAdapter extends ClusterAdapter {
 
     this.cleanup = () => {
       const clenupJobs = [
-        this.subClient.sUnsubscribe(this.channel, handler),
+        this.subClient.sUnsubscribe(this.channel, handler, RETURN_BUFFERS),
         ...this.channels.map(channel => {
-          this.subClient.sUnsubscribe(this.requestOf(channel), handler);
+          this.subClient.sUnsubscribe(this.requestOf(channel), handler, RETURN_BUFFERS);
         }),
-        this.subClient.sUnsubscribe(this.responseChannel, handler),
+        this.subClient.sUnsubscribe(this.responseChannel, handler, RETURN_BUFFERS),
       ];
 
-      this.subscribings.forEach(channel => this.subClient.sUnsubscribe(channel, this.listener));
+      this.subscribings.forEach(channel => this.subClient.sUnsubscribe(channel, this.listener, RETURN_BUFFERS));
       this.subscribings.clear();
 
       return Promise.all(clenupJobs);
