@@ -863,7 +863,7 @@ export class RedisAdapter extends Adapter {
   }
 
   public addSockets(opts: BroadcastOptions, rooms: Room[]) {
-    const request = JSON.stringify({
+    const request = {
       uid: this.uid,
       type: RequestType.REMOTE_JOIN,
       opts: {
@@ -871,18 +871,18 @@ export class RedisAdapter extends Adapter {
         except: [...opts.except]
       },
       rooms: [...rooms]
-    });
+    };
 
     if (opts.flags?.local) {
       this.postjoin(request);
       return super.addSockets(opts, rooms);
     }
 
-    this.pubClient.publish(this.requestChannel, request);
+    this.pubClient.publish(this.requestChannel, JSON.stringify(request));
   }
 
   public delSockets(opts: BroadcastOptions, rooms: Room[]) {
-    const request = JSON.stringify({
+    const request = {
       uid: this.uid,
       type: RequestType.REMOTE_LEAVE,
       opts: {
@@ -890,18 +890,18 @@ export class RedisAdapter extends Adapter {
         except: [...opts.except]
       },
       rooms: [...rooms]
-    });
+    };
 
     if (opts.flags?.local) {
       this.postleave(request);
       return super.delSockets(opts, rooms);
     }
 
-    this.pubClient.publish(this.requestChannel, request);
+    this.pubClient.publish(this.requestChannel, JSON.stringify(request));
   }
 
   public disconnectSockets(opts: BroadcastOptions, close: boolean) {
-    const request = JSON.stringify({
+    const request = {
       uid: this.uid,
       type: RequestType.REMOTE_DISCONNECT,
       opts: {
@@ -909,14 +909,14 @@ export class RedisAdapter extends Adapter {
         except: [...opts.except]
       },
       close,
-    });
+    };
 
     if (opts.flags?.local) {
       this.postdisconnect(request);
       return super.disconnectSockets(opts, close);
     }
 
-    this.pubClient.publish(this.requestChannel, request);
+    this.pubClient.publish(this.requestChannel, JSON.stringify(request));
   }
 
   public serverSideEmit(packet: any[]): void {
